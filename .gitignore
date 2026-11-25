@@ -50,4 +50,8 @@ Architecture specification v0.2. MVP in development.
 
 MIT
 filePath">
-C:\Users\Administrador\Documents\GitHub\aegis-governance-runtime\README.md
+C:\Users\Administrador\Documents\GitHub\aegis-governance-runtime\README.md@__pycache__/
+*.pyc
+*.pyo
+aegis_ledger.db
+

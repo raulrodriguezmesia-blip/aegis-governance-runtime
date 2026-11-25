@@ -853,6 +853,183 @@ Aegis does **not**:
 
 ---
 
+## 9. Threat Model
+
+Every governance system is a target. Aegis must anticipate attacks on itself.
+
+### Threat 01: Malicious Agent
+
+**Description:** An agent deliberately proposes harmful actions or false memories.
+
+**Detection:** Behavioral fingerprinting (V3), anomaly detection on proposal patterns.
+
+**Mitigation:** Constitution rules (NO_DUPLICATE, NO_CONTRADICTION), Risk Engine, QUARANTINE.
+
+**Verdict:** `DENY` or `QUARANTINE` depending on severity.
+
+### Threat 02: Prompt Injection
+
+**Description:** External input manipulates the agent into proposing unauthorized actions.
+
+**Detection:** Constitution rules on provenance, source verification.
+
+**Mitigation:** `PROVENANCE_REQUIRED`, `SOURCE_REQUIRED`, Execution Guard.
+
+**Verdict:** `DENY · PROVENANCE_UNVERIFIED`.
+
+### Threat 03: Constitution Tampering
+
+**Description:** An attacker modifies `charter_v1.yaml` to weaken governance.
+
+**Detection:** Ed25519 signature verification at startup and on reload.
+
+**Mitigation:** Fail-closed on signature mismatch. Constitution hash embedded in every audit event.
+
+**Verdict:** `FAIL CLOSED · CONSTITUTION_COMPROMISED` — entire runtime halts.
+
+### Threat 04: Ledger Manipulation
+
+**Description:** An attacker alters, deletes, or reorders audit events.
+
+**Detection:** Hash chain verification (`prev_hash → event_hash`), Merkle checkpoints (V3).
+
+**Mitigation:** Append-only ledger, chain verification on every read.
+
+**Verdict:** `INTEGRITY BROKEN` — alert + freeze.
+
+### Threat 05: Replay Attack
+
+**Description:** An attacker re-submits a previously allowed proposal.
+
+**Detection:** `idempotency_key` uniqueness check.
+
+**Mitigation:** Ledger rejects duplicate keys.
+
+**Verdict:** `DENY · DUPLICATE`.
+
+### Threat 06: Duplicate Request (Retry Storm)
+
+**Description:** An agent retries a proposal after timeout, creating duplicates.
+
+**Detection:** Idempotency key + circuit breaker.
+
+**Mitigation:** Circuit breaker opens after N failures, HALF_OPEN probes.
+
+**Verdict:** `DENY · DUPLICATE` or `QUARANTINE · BUDGET_EXCEEDED`.
+
+### Threat 07: Quarantine Escape
+
+**Description:** A quarantined proposal is accidentally promoted without review.
+
+**Detection:** Quarantine state machine enforcement.
+
+**Mitigation:** `PROMOTE` requires explicit review action (human or Mnemosyne Council).
+
+**Verdict:** `DENY · POLICY_VIOLATION` if bypass attempted.
+
+---
+
+## 10. Version Roadmap
+
+### V1 — Deterministic Governance (MVP)
+
+**Goal:** Prove deterministic governance. Nothing else.
+
+| Component | Status |
+|-----------|--------|
+| Policy Engine | ✅ |
+| Memory Constitution | ✅ |
+| Verdict Model (ALLOW/DENY/QUARANTINE) | ✅ |
+| Reason Codes | ✅ |
+| Hash Chain (payload_hash + event_hash) | ✅ |
+| Audit Ledger (SQLite) | ✅ |
+| CLI (propose, vote, verify, explain) | ✅ |
+| Verification (tamper detection) | ✅ |
+| Idempotency (basic) | ✅ |
+| Demo (60 seconds, 4 scenarios) | ✅ |
+| Tests (property-based) | ✅ |
+
+### V2 — Governance Lifecycle
+
+**Goal:** Close the loops V1 leaves open.
+
+| Component | Status |
+|-----------|--------|
+| Quarantine Lifecycle (TTL + review) | V2 |
+| Constitution Signing (Ed25519) | V2 |
+| Idempotency (full) | V2 |
+| Execution Guard (circuit breaker) | V2 |
+| Reverse Governance (appeals) | V2 |
+| Temporal Re-evaluation | V2 |
+| OpenTelemetry | V2 |
+| CloudEvents compliance | V2 |
+
+### V3 — Living Governance
+
+**Goal:** Governance that adapts and propagates.
+
+| Component | Status |
+|-----------|--------|
+| Mnemosyne Council (consensus voting) | V3 |
+| Cross-Agent Trust Propagation | V3 |
+| Behavioral Fingerprinting | V3 |
+| Merkle Checkpoints | V3 |
+| Zero-Knowledge Audit Proofs | V3 |
+
+### V4 — Distributed Governance
+
+**Goal:** No single point of trust.
+
+| Component | Status |
+|-----------|--------|
+| Governance Federation | V4 |
+| Cross-Instance Verification | V4 |
+| Distributed Ledger | V4 |
+
+### V5 — Adaptive Governance
+
+**Goal:** Constitution that evolves (requires solving "who governs the governor?").
+
+| Component | Status |
+|-----------|--------|
+| Adaptive Constitution | V5 |
+| Self-Healing Policies | V5 |
+| Governance Meta-Rules | V5 |
+
+---
+
+## 11. Success Metrics
+
+### V1 Metrics (MVP)
+
+| Metric | Target | How Measured |
+|--------|--------|-------------|
+| Determinism | 100% (same input → same verdict + hash) | Property-based tests |
+| Tamper detection | 100% (any 1-bit change detected) | Automated tamper tests |
+| Latency p99 | < 1ms per evaluation | Benchmark suite |
+| Demo reproducibility | 60 seconds, 4 scenarios | Scripted demo |
+| Test coverage | > 90% | pytest-cov |
+| Idempotency | 0 duplicate executions | Integration tests |
+
+### V2 Metrics
+
+| Metric | Target |
+|--------|--------|
+| Quarantine resolution rate | > 80% within TTL |
+| Constitution verification | 100% startup success |
+| Circuit breaker accuracy | 0 false trips |
+| Appeal success rate | Tracked |
+
+### V3+ Metrics
+
+| Metric | Target |
+|--------|--------|
+| Trust propagation accuracy | > 95% |
+| ZK proof verification time | < 100ms |
+| Federation consensus | 100% agreement across instances |
+
+---
+
 ## Appendix A: Competitor Landscape
 
 | Category | Examples | What They Do | What Aegis Adds |

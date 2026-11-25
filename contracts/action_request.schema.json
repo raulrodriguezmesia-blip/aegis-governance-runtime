@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ActionRequest",
+  "type": "object",
+  "required": ["request_id", "agent_id", "action_type", "payload"],
+  "properties": {
+    "request_id": { "type": "string" },
+    "agent_id": { "type": "string" },
+    "action_type": { "type": "string" },
+    "payload": { "type": "object" },
+    "idempotency_key": { "type": "string" },
+    "constitution_version": { "type": "string", "default": "v1.0.0" }
+  }
+}

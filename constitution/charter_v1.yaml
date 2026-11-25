@@ -1,0 +1,33 @@
+# Aegis Constitution v1.0.0
+# Deterministic governance rules for agent proposals.
+
+version: "1.0.0"
+rules:
+  - id: NO_DUPLICATE
+    description: "Reject identical active facts (same subject + predicate + value)."
+    verdict: DENY
+    reason_code: DUPLICATE
+
+  - id: NO_CONTRADICTION
+    description: "Quarantine facts that conflict with active facts (same subject + predicate + different value)."
+    verdict: QUARANTINE
+    reason_code: CONTRADICTION
+
+  - id: SOURCE_REQUIRED
+    description: "Reject facts without a source."
+    verdict: DENY
+    reason_code: MISSING_SOURCE
+
+  - id: CONFIDENCE_THRESHOLD
+    description: "Quarantine facts below confidence threshold."
+    verdict: QUARANTINE
+    reason_code: LOW_CONFIDENCE
+    threshold: 0.8
+
+  - id: INVALID_SCHEMA
+    description: "Reject facts missing required fields."
+    verdict: DENY
+    reason_code: INVALID_SCHEMA
+
+thresholds:
+  confidence: 0.8

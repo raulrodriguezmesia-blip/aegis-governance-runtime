@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AuditEvent",
+  "type": "object",
+  "required": ["event_id", "timestamp_utc", "actor", "action", "verdict", "reason_code", "constitution_version", "constitution_hash", "prev_hash", "payload_hash", "event_hash"],
+  "properties": {
+    "event_id": { "type": "string" },
+    "timestamp_utc": { "type": "string" },
+    "actor": { "type": "string" },
+    "action": { "type": "string" },
+    "verdict": { "type": "string", "enum": ["ALLOW", "DENY", "QUARANTINE"] },
+    "reason_code": { "type": "string" },
+    "constitution_version": { "type": "string" },
+    "constitution_hash": { "type": "string" },
+    "prev_hash": { "type": "string" },
+    "payload_hash": { "type": "string" },
+    "event_hash": { "type": "string" }
+  }
+}

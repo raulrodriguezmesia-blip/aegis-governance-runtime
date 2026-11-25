@@ -59,27 +59,42 @@ class AegisLedger:
                 constitution_hash TEXT NOT NULL,
                 prev_hash TEXT NOT NULL,
                 payload_hash TEXT NOT NULL,
-                event_hash TEXT NOT NULL
+                event_hash TEXT NOT NULL,
+                payload TEXT
             );
+
+            CREATE TRIGGER IF NOT EXISTS prevent_update
+            BEFORE UPDATE ON events
+            BEGIN
+                SELECT RAISE(ABORT, 'UPDATE on events table is not allowed');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS prevent_delete
+            BEFORE DELETE ON events
+            BEGIN
+                SELECT RAISE(ABORT, 'DELETE on events table is not allowed');
+            END;
         """)
         conn.commit()
         conn.close()
 
-    def append(self, event: AuditEvent) -> str:
+    def append(self, event: AuditEvent, payload: dict = None) -> str:
         """Append an event to the ledger. Returns event_hash."""
         prev_hash = self._get_last_hash()
         event.prev_hash = prev_hash
         event.event_hash = compute_event_hash(event, prev_hash)
 
+        payload_json = json.dumps(payload, sort_keys=True) if payload else None
+
         conn = sqlite3.connect(self.db_path)
         conn.execute(
             "INSERT INTO events (event_id, timestamp_utc, actor, action, verdict, reason_code, "
-            "constitution_version, constitution_hash, prev_hash, payload_hash, event_hash) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "constitution_version, constitution_hash, prev_hash, payload_hash, event_hash, payload) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (event.event_id, event.timestamp_utc, event.actor, event.action,
              event.verdict, event.reason_code, event.constitution_version,
              event.constitution_hash, event.prev_hash, event.payload_hash,
-             event.event_hash))
+             event.event_hash, payload_json))
         conn.commit()
         conn.close()
         return event.event_hash
@@ -103,7 +118,7 @@ class AegisLedger:
         for row in rows:
             (seq, event_id, timestamp, actor, action, verdict, reason_code,
              constitution_version, constitution_hash, stored_prev_hash,
-             payload_hash, event_hash) = row
+             payload_hash, event_hash, payload) = row
 
             if stored_prev_hash != prev_hash:
                 return {"status": "INTEGRITY BROKEN", "broken_at": seq,
@@ -135,8 +150,15 @@ class AegisLedger:
                           "event_hash"], r)) for r in rows]
 
     def tamper(self, seq: int):
-        """Tamper with an event (for demo only)."""
+        """Tamper with an event (for demo only). Bypasses trigger."""
         conn = sqlite3.connect(self.db_path)
+        conn.execute("DROP TRIGGER IF EXISTS prevent_update")
         conn.execute("UPDATE events SET verdict='TAMPERED' WHERE seq=?", (seq,))
+        conn.commit()
+        conn.execute("""CREATE TRIGGER IF NOT EXISTS prevent_update
+            BEFORE UPDATE ON events
+            BEGIN
+                SELECT RAISE(ABORT, 'UPDATE on events table is not allowed');
+            END;""")
         conn.commit()
         conn.close()

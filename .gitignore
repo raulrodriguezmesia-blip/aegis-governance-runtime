@@ -1,57 +1,30 @@
-# Aegis Governance Runtime
-
-> *Trust the agent's intelligence. Verify its authority. Prove its actions.*
-
-Aegis is a **governance middleware** that verifies agent decisions before they are allowed to modify memory, invoke tools, execute MCP operations, or change external state.
-
-## The Problem
-
-AI agents can act. But when something goes wrong, there's no reliable way to prove what was decided, by whom, under which policy, and when. Logs can be edited. Dashboards can lie.
-
-## The Solution
-
-Aegis sits between agents and the systems they affect. Every proposal passes through a deterministic evaluation pipeline before execution. Every decision produces cryptographically verifiable evidence.
-
-## Core Principle
-
-**No agent action without governance review.**
-
-## Quick Start
-
-```bash
-git clone https://github.com/raulrodriguezmesia-blip/aegis-governance-runtime.git
-cd aegis-governance-runtime
-
-# Coming soon: pip install -r requirements.txt
-# python src/cli/aegis.py demo
-```
-
-## Architecture
-
-```
-Agent → Proposal → Aegis Governance Runtime → ALLOW / DENY / QUARANTINE → Execution
-                         ↓
-                    Audit Ledger (hash chain)
-```
-
-## What Makes It Different
-
-- **Constitutional Governance** — deterministic rules, not prompts
-- **Memory Validation** — structured facts, not free text
-- **Evidence Ledger** — hash-linked, tamper-evident
-- **Quarantine Lifecycle** — not a trash can, a governance queue
-- **Model-Agnostic** — works with OpenAI, Claude, Gemini, CrewAI, LangGraph, MCP
-
-## Status
-
-Architecture specification v0.2. MVP in development.
-
-## License
-
-MIT
-filePath">
-C:\Users\Administrador\Documents\GitHub\aegis-governance-runtime\README.md@__pycache__/
+# Python
+__pycache__/
 *.pyc
 *.pyo
-aegis_ledger.db
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
 
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.venv/
+venv/

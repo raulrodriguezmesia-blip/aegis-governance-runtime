@@ -7,6 +7,7 @@ Deterministic evaluation pipeline:
   Stage 4: Risk Analysis
   Stage 5: Verdict Resolution
 """
+import math
 import time
 from typing import Optional
 from ..contracts.models import MemoryFact, Verdict, ReasonCode
@@ -26,23 +27,37 @@ class ConstitutionEngine:
         if not fact.subject or not fact.predicate or not fact.value:
             return (Verdict.DENY, ReasonCode.INVALID_SCHEMA)
 
+        if not isinstance(fact.confidence, (int, float)):
+            return (Verdict.DENY, ReasonCode.INVALID_SCHEMA)
+
+        if math.isnan(fact.confidence) or math.isinf(fact.confidence):
+            return (Verdict.DENY, ReasonCode.INVALID_SCHEMA)
+
+        if fact.confidence < 0.0 or fact.confidence > 1.0:
+            return (Verdict.DENY, ReasonCode.INVALID_SCHEMA)
+
         # Stage 2: Constitution Validation
-        if not fact.source:
+        if not fact.source or not fact.source.strip():
             return (Verdict.DENY, ReasonCode.MISSING_SOURCE)
 
-        # Check for duplicates (same subject + predicate + value, both active)
+        # Normalize for comparison
+        subject = fact.subject.strip().upper()
+        predicate = fact.predicate.strip().upper()
+        value = fact.value.strip()
+
+        # Check for duplicates (case-insensitive)
         for existing in self._active_facts:
-            if (existing.subject == fact.subject and
-                existing.predicate == fact.predicate and
-                existing.value == fact.value and
+            if (existing.subject.strip().upper() == subject and
+                existing.predicate.strip().upper() == predicate and
+                existing.value.strip() == value and
                 existing.valid_to is None):
                 return (Verdict.DENY, ReasonCode.DUPLICATE)
 
         # Stage 3: Conflict Analysis
         for existing in self._active_facts:
-            if (existing.subject == fact.subject and
-                existing.predicate == fact.predicate and
-                existing.value != fact.value and
+            if (existing.subject.strip().upper() == subject and
+                existing.predicate.strip().upper() == predicate and
+                existing.value.strip() != value and
                 existing.valid_to is None):
                 return (Verdict.QUARANTINE, ReasonCode.CONTRADICTION)
 
@@ -65,5 +80,7 @@ class ConstitutionEngine:
         """Mark matching active facts as superseded."""
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         for f in self._active_facts:
-            if f.subject == subject and f.predicate == predicate and f.valid_to is None:
+            if f.subject.strip().upper() == subject.strip().upper() and \
+               f.predicate.strip().upper() == predicate.strip().upper() and \
+               f.valid_to is None:
                 f.valid_to = now

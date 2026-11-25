@@ -5,10 +5,12 @@ Commands:
   aegis verify    — Verify ledger integrity
   aegis demo      — Run 60-second demo (4 scenarios)
 """
-import sys
+import uuid
+import hashlib
 import os
 import time
-import uuid
+import sys
+import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -16,7 +18,23 @@ from aegis.contracts.models import MemoryFact, Verdict, ReasonCode, AuditEvent
 from aegis.constitution.engine import ConstitutionEngine
 from aegis.ledger.ledger import AegisLedger, compute_payload_hash
 
-CONSTITUTION_HASH = "sha256:aegis-charter-v1-0-0"
+# Load constitution from YAML and compute real hash
+CONSTITUTION_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "constitution", "charter_v1.yaml")
+CONSTITUTION_HASH = "sha256:" + hashlib.sha256(open(CONSTITUTION_PATH, "rb").read()).hexdigest() if os.path.exists(CONSTITUTION_PATH) else "sha256:unknown"
+
+# Load confidence threshold from YAML
+CONFIDENCE_THRESHOLD = 0.8
+try:
+    import yaml as _yaml
+    with open(CONSTITUTION_PATH) as f:
+        charter = _yaml.safe_load(f)
+    for rule in charter.get("rules", []):
+        if rule.get("id") == "CONFIDENCE_THRESHOLD":
+            CONFIDENCE_THRESHOLD = rule.get("threshold", 0.8)
+    if "thresholds" in charter:
+        CONFIDENCE_THRESHOLD = charter["thresholds"].get("confidence", CONFIDENCE_THRESHOLD)
+except Exception:
+    pass
 
 
 def evaluate_fact(fact: MemoryFact, engine: ConstitutionEngine, ledger: AegisLedger) -> dict:
@@ -28,7 +46,7 @@ def evaluate_fact(fact: MemoryFact, engine: ConstitutionEngine, ledger: AegisLed
 
     payload_hash = compute_payload_hash(fact.to_dict())
     event = AuditEvent(
-        event_id=f"evt-{uuid.uuid4().hex[:8]}",
+        event_id=f"evt-{uuid.uuid4()}",
         timestamp_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         actor=fact.source,
         action="MEMORY_WRITE",
@@ -38,7 +56,7 @@ def evaluate_fact(fact: MemoryFact, engine: ConstitutionEngine, ledger: AegisLed
         constitution_hash=CONSTITUTION_HASH,
         prev_hash="",
         payload_hash=payload_hash)
-    ledger.append(event)
+    ledger.append(event, payload=fact.to_dict())
 
     return {"verdict": verdict.value, "reason_code": reason.value, "payload_hash": payload_hash[:16]}
 
@@ -50,7 +68,7 @@ def cmd_demo():
     print("=" * 60)
     print()
 
-    engine = ConstitutionEngine(confidence_threshold=0.8)
+    engine = ConstitutionEngine(confidence_threshold=CONFIDENCE_THRESHOLD)
     import tempfile
     tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     tmp.close()

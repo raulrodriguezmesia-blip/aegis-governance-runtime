@@ -1,8 +1,12 @@
-"""Aegis Quarantine Lifecycle — V1.5.
+"""Aegis Quarantine Lifecycle — V1.5/V1.6.
 
 QUARANTINE is not a terminal state. It is a governance queue:
   PENDING → UNDER_REVIEW → PROMOTED | DENIED | EXPIRED
+
+V1.6: PROMOTE actually commits the fact into active memory when an engine
+is attached; expiry uses UTC (calendar.timegm) to avoid timezone drift.
 """
+import calendar
 import time
 from enum import Enum
 from dataclasses import dataclass, field
@@ -31,18 +35,20 @@ class QuarantineEntry:
     expires_at: str = ""
     reviewed_by: str = ""
     review_note: str = ""
+    submitted_by: str = ""
 
 
 class QuarantineManager:
     """Manages the quarantine lifecycle."""
 
-    def __init__(self, ttl_hours: float = 24.0):
+    def __init__(self, ttl_hours: float = 24.0, engine=None):
         self.ttl_hours = ttl_hours
+        self.engine = engine  # optional: ConstitutionEngine to commit on PROMOTE
         self._entries: dict[str, QuarantineEntry] = {}
 
     def quarantine(self, fact_id: str, subject: str, predicate: str,
                    value: str, confidence: float, source: str,
-                   reason_code: str) -> QuarantineEntry:
+                   reason_code: str, submitted_by: str = "") -> QuarantineEntry:
         """Add a fact to quarantine."""
         created = time.time()
         expires = created + (self.ttl_hours * 3600)
@@ -50,11 +56,12 @@ class QuarantineManager:
             fact_id=fact_id, subject=subject, predicate=predicate,
             value=value, confidence=confidence, source=source,
             reason_code=reason_code,
-            expires_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(expires)))
+            expires_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(expires)),
+            submitted_by=submitted_by)
         self._entries[fact_id] = entry
         return entry
 
-    def review(self, fact_id: str, reviewer: str, decision: str, note: str = ""):
+    def review(self, fact_id: str, reviewer: str, decision: str, note: str = "") -> None:
         """Review a quarantined entry. decision: PROMOTE or DENY."""
         entry = self._entries.get(fact_id)
         if not entry:
@@ -62,11 +69,26 @@ class QuarantineManager:
         if entry.state not in (QuarantineState.PENDING, QuarantineState.UNDER_REVIEW):
             raise ValueError(f"Entry {fact_id} is {entry.state}, cannot review")
 
+        if not reviewer or not reviewer.strip():
+            raise ValueError("Reviewer identity is required")
+
+        # Prevent self-review
+        if reviewer == entry.submitted_by:
+            raise ValueError(f"Cannot review entry {fact_id} with same submitter {entry.submitted_by}")
+
         entry.state = QuarantineState.UNDER_REVIEW
         entry.reviewed_by = reviewer
         entry.review_note = note
 
         if decision.upper() == "PROMOTE":
+            # Commit into active memory if an engine is attached.
+            if self.engine is not None:
+                from ..contracts.models import MemoryFact
+                fact = MemoryFact(
+                    subject=entry.subject, predicate=entry.predicate,
+                    value=entry.value, confidence=entry.confidence,
+                    source=entry.source)
+                self.engine.commit(fact)
             entry.state = QuarantineState.PROMOTED
         elif decision.upper() == "DENY":
             entry.state = QuarantineState.DENIED
@@ -79,7 +101,8 @@ class QuarantineManager:
         expired = 0
         for entry in self._entries.values():
             if entry.state in (QuarantineState.PENDING, QuarantineState.UNDER_REVIEW):
-                expires = time.mktime(time.strptime(entry.expires_at, "%Y-%m-%dT%H:%M:%SZ"))
+                # Parse expires_at strictly as UTC
+                expires = calendar.timegm(time.strptime(entry.expires_at, "%Y-%m-%dT%H:%M:%SZ"))
                 if now > expires:
                     entry.state = QuarantineState.EXPIRED
                     expired += 1

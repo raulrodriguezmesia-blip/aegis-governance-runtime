@@ -1,12 +1,16 @@
-"""Aegis Ledger — V1.
+"""Aegis Ledger — V1.6.
 
 Append-only hash chain with payload_hash and event_hash.
+V1.6: Signed checkpoint outside the DB for external integrity verification.
 """
 import hashlib
+import hmac
 import json
+import os
 import sqlite3
 import time
 from typing import Optional
+
 from ..contracts.models import AuditEvent
 
 
@@ -124,7 +128,6 @@ class AegisLedger:
                 return {"status": "INTEGRITY BROKEN", "broken_at": seq,
                         "expected_prev": prev_hash, "found_prev": stored_prev_hash}
 
-            # Recompute event_hash
             event = AuditEvent(
                 event_id=event_id, timestamp_utc=timestamp, actor=actor,
                 action=action, verdict=verdict, reason_code=reason_code,
@@ -136,6 +139,19 @@ class AegisLedger:
                 return {"status": "INTEGRITY BROKEN", "broken_at": seq,
                         "expected_hash": recomputed, "found_hash": event_hash}
 
+            if payload is not None:
+                try:
+                    payload_dict = json.loads(payload)
+                    expected_payload_hash = compute_payload_hash(payload_dict)
+                except (json.JSONDecodeError, TypeError):
+                    expected_payload_hash = compute_payload_hash(payload)
+            else:
+                expected_payload_hash = compute_payload_hash(None)
+            if payload_hash != expected_payload_hash:
+                return {"status": "INTEGRITY BROKEN", "broken_at": seq,
+                        "expected_payload_hash": expected_payload_hash,
+                        "found_payload_hash": payload_hash}
+
             prev_hash = event_hash
 
         return {"status": "VERIFIED", "records": len(rows)}
@@ -144,21 +160,68 @@ class AegisLedger:
         conn = sqlite3.connect(self.db_path)
         rows = conn.execute("SELECT * FROM events ORDER BY seq").fetchall()
         conn.close()
-        return [dict(zip(["seq", "event_id", "timestamp_utc", "actor", "action",
-                          "verdict", "reason_code", "constitution_version",
-                          "constitution_hash", "prev_hash", "payload_hash",
-                          "event_hash"], r)) for r in rows]
+        keys = ["seq", "event_id", "timestamp_utc", "actor", "action",
+                "verdict", "reason_code", "constitution_version",
+                "constitution_hash", "prev_hash", "payload_hash",
+                "event_hash"]
+        return [dict(zip(keys, r)) for r in rows]
 
-    def tamper(self, seq: int):
-        """Tamper with an event (for demo only). Bypasses trigger."""
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("DROP TRIGGER IF EXISTS prevent_update")
-        conn.execute("UPDATE events SET verdict='TAMPERED' WHERE seq=?", (seq,))
-        conn.commit()
-        conn.execute("""CREATE TRIGGER IF NOT EXISTS prevent_update
-            BEFORE UPDATE ON events
-            BEGIN
-                SELECT RAISE(ABORT, 'UPDATE on events table is not allowed');
-            END;""")
-        conn.commit()
-        conn.close()
+    def create_checkpoint(self, checkpoint_path: str) -> str:
+        """Create a signed checkpoint of the ledger state (V1.6)."""
+        last_hash = self._get_last_hash()
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        key = os.environ.get("AEGIS_CHECKPOINT_KEY", None)
+        if key is None:
+            key_path = os.path.join(os.path.dirname(os.path.abspath(checkpoint_path)), ".checkpoint_key")
+            if os.path.exists(key_path):
+                with open(key_path, "rb") as f:
+                    key = f.read().decode()
+            else:
+                key = "aegis-default-checkpoint-key"
+        sig_key = key.encode() if isinstance(key, str) else key
+        signature = hmac.new(sig_key, last_hash.encode(), hashlib.sha256).hexdigest()
+        checkpoint = {
+            "last_hash": last_hash,
+            "timestamp_utc": timestamp,
+            "signature": signature,
+            "records": len(self.get_all()),
+        }
+        os.makedirs(os.path.dirname(os.path.abspath(checkpoint_path)), exist_ok=True)
+        with open(checkpoint_path, "w") as f:
+            json.dump(checkpoint, f)
+        return checkpoint_path
+
+    def verify_checkpoint(self, checkpoint_path: str) -> dict:
+        """Verify a signed checkpoint against the live ledger state (V1.6)."""
+        if not os.path.exists(checkpoint_path):
+            return {"status": "CHECKPOINT_NOT_FOUND", "checkpoint_path": checkpoint_path}
+        try:
+            with open(checkpoint_path, "r") as f:
+                checkpoint = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {"status": "CHECKPOINT_CORRUPT"}
+
+        stored_last_hash = checkpoint.get("last_hash")
+        signature = checkpoint.get("signature")
+        if not stored_last_hash or not signature:
+            return {"status": "CHECKPOINT_INVALID", "missing_fields": ["last_hash", "signature"]}
+
+        live_last_hash = self._get_last_hash()
+        key = os.environ.get("AEGIS_CHECKPOINT_KEY", None)
+        if key is None:
+            key_path = os.path.join(os.path.dirname(os.path.abspath(checkpoint_path)), ".checkpoint_key")
+            if os.path.exists(key_path):
+                with open(key_path, "rb") as f:
+                    key = f.read().decode()
+            else:
+                key = "aegis-default-checkpoint-key"
+        sig_key = key.encode() if isinstance(key, str) else key
+        expected_sig = hmac.new(sig_key, stored_last_hash.encode(), hashlib.sha256).hexdigest()
+
+        if signature == expected_sig and stored_last_hash == live_last_hash:
+            return {"status": "VERIFIED", "last_hash": stored_last_hash, "records": checkpoint.get("records", 0)}
+        if signature != expected_sig:
+            return {"status": "SIGNATURE_INVALID", "stored_sig": signature, "expected_sig": expected_sig,
+                    "last_hash": stored_last_hash, "live_last_hash": live_last_hash}
+        return {"status": "INTEGRITY MISMATCH", "stored_last_hash": stored_last_hash,
+                "live_last_hash": live_last_hash, "signature_valid": True}

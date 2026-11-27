@@ -20,12 +20,14 @@ def test_quarantine_pending():
     assert entry.state == QuarantineState.PENDING
     assert len(qm.get_pending()) == 1
 
+
 def test_quarantine_promote():
     qm = QuarantineManager()
     qm.quarantine("f1", "USER", "LANG", "JAVA", 0.5, "test", "LOW_CONFIDENCE")
     qm.review("f1", "auditor", "PROMOTE", "Evidence verified")
     entry = qm._entries["f1"]
     assert entry.state == QuarantineState.PROMOTED
+
 
 def test_quarantine_deny():
     qm = QuarantineManager()
@@ -34,10 +36,10 @@ def test_quarantine_deny():
     entry = qm._entries["f1"]
     assert entry.state == QuarantineState.DENIED
 
+
 def test_quarantine_expire():
     qm = QuarantineManager(ttl_hours=0.0000001)
     qm.quarantine("f1", "USER", "LANG", "JAVA", 0.5, "test", "LOW_CONFIDENCE")
-    # Manually set expires_at to past
     entry = qm._entries["f1"]
     entry.expires_at = "2020-01-01T00:00:00Z"
     expired = qm.expire_old()
@@ -48,7 +50,6 @@ def test_quarantine_expire():
 # --- Constitution Signing ---
 
 def test_constitution_sign_verify():
-    # Create a temp constitution
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write("version: 1.0.0\nrules: []\n")
         path = f.name
@@ -65,6 +66,7 @@ def test_constitution_sign_verify():
     os.unlink(path + ".sig")
     os.unlink(path + ".sha256")
 
+
 def test_constitution_tampered():
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write("version: 1.0.0\nrules: []\n")
@@ -74,7 +76,6 @@ def test_constitution_tampered():
     priv, pub = generate_keypair()
     signer.sign(priv)
 
-    # Tamper with constitution
     with open(path, "w") as f:
         f.write("version: 2.0.0\nrules: [EVIL]\n")
 
@@ -95,9 +96,10 @@ def test_appeal_promote():
         "subject": "USER", "predicate": "LANG", "value": "JAVA",
         "confidence": 0.95, "source": "verified"
     }, "New evidence provided")
-    result = am.resolve(appeal.appeal_id)
+    result = am.resolve(appeal.appeal_id, "reviewer-1")
     assert result["status"] == "APPROVED"
     assert result["verdict"] == "ALLOW"
+
 
 def test_appeal_reject():
     engine = ConstitutionEngine()
@@ -106,7 +108,7 @@ def test_appeal_reject():
         "subject": "USER", "predicate": "LANG", "value": "JAVA",
         "confidence": 0.3, "source": ""
     }, "Weak appeal")
-    result = am.resolve(appeal.appeal_id)
+    result = am.resolve(appeal.appeal_id, "reviewer-1")
     assert result["status"] == "REJECTED"
 
 
@@ -121,8 +123,9 @@ def test_idempotency_duplicate():
     assert is_dup2
     assert original["response"]["verdict"] == "ALLOW"
 
+
 def test_idempotency_fingerprint():
     store = IdempotencyStore()
     fp1 = store.fingerprint({"a": 1, "b": 2})
     fp2 = store.fingerprint({"b": 2, "a": 1})
-    assert fp1 == fp2  # Same fingerprint regardless of key order
+    assert fp1 == fp2

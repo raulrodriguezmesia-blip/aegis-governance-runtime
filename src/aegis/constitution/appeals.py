@@ -15,7 +15,7 @@ class Appeal:
     appeal_id: str
     original_fact_id: str
     agent_id: str
-    new_evidence: list[dict]
+    new_evidence: dict  # Changed from list to dict
     reason: str
     status: str = "PENDING"  # PENDING, APPROVED, REJECTED
     created_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
@@ -31,7 +31,7 @@ class AppealManager:
         self._appeals: dict[str, Appeal] = {}
 
     def appeal(self, original_fact_id: str, agent_id: str,
-               new_evidence: list[dict], reason: str) -> Appeal:
+               new_evidence: dict, reason: str) -> Appeal:
         """File an appeal against a DENY."""
         appeal = Appeal(
             appeal_id=f"apl-{len(self._appeals)+1:04d}",
@@ -42,7 +42,7 @@ class AppealManager:
         self._appeals[appeal.appeal_id] = appeal
         return appeal
 
-    def resolve(self, appeal_id: str) -> dict:
+    def resolve(self, appeal_id: str, reviewer: str) -> dict:
         """Re-evaluate the original fact with new evidence."""
         appeal = self._appeals.get(appeal_id)
         if not appeal:
@@ -50,8 +50,14 @@ class AppealManager:
         if appeal.status != "PENDING":
             raise ValueError(f"Appeal {appeal_id} is {appeal.status}")
 
+        if not reviewer or not reviewer.strip():
+            raise ValueError("Reviewer identity is required")
+
+        # Prevent self-approval
+        if reviewer == appeal.agent_id:
+            raise ValueError(f"Cannot approve appeal {appeal_id} with same agent {appeal.agent_id}")
+
         # Reconstruct the fact with new evidence
-        # The new_evidence should contain the missing fields
         fact = MemoryFact(
             subject=appeal.new_evidence.get("subject", ""),
             predicate=appeal.new_evidence.get("predicate", ""),
